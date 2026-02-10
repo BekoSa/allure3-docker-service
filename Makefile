@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-PROJECT := allure-wrapper
+PROJECT := allure3-docker-service
 IMAGE := $(PROJECT):dev
 PORT := 8080
 DATA_DIR := $(CURDIR)/data
