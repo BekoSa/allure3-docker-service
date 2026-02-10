@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  allure-wrapper:
+    build: .
+    image: allure-wrapper:dev
+    container_name: allure-wrapper
+    restart: unless-stopped
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      DATA_DIR: /data
+      LISTEN: 0.0.0.0:8080
+      ALLURE_BIN: allure
+      RUST_BACKTRACE: "1"
+      RUST_LOG: info
+
+    volumes:
+      - ./data:/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/projects"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
