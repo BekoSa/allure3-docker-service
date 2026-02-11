@@ -46,12 +46,10 @@ jobs:
           set -euo pipefail
           git fetch --tags --force
 
-          # Берём последний тег вида vX.Y.Z
           last="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"
           if [[ -z "${last}" ]]; then
             next="v0.1.0"
           else
-            # bump patch: vX.Y.Z -> vX.Y.(Z+1)
             ver="${last#v}"
             IFS='.' read -r major minor patch <<< "${ver}"
             patch=$((patch+1))
@@ -71,7 +69,6 @@ jobs:
             type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
             type=sha,format=short,enable=true
 
-            # для master push: semver тег и latest
             type=raw,value=${{ steps.ver.outputs.next }},enable=${{ github.event_name == 'push' }}
             type=raw,value=latest,enable=${{ github.event_name == 'push' }}
 
@@ -97,7 +94,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ---------- пушим git tag с версией в репозиторий ----------
       - name: Create & push git tag (master only)
         if: github.event_name == 'push'
         shell: bash
@@ -107,7 +103,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Если вдруг тег уже существует — не падаем
           if git rev-parse "$ver" >/dev/null 2>&1; then
             echo "Tag $ver already exists, skipping."
             exit 0
