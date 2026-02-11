@@ -1,5 +1,5 @@
 use anyhow::Context;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::{fs, io::AsyncWriteExt};
 
@@ -29,7 +29,6 @@ pub async fn reserve_next_run_id(project_dir: &Path) -> anyhow::Result<u64> {
         Err(_) => 1,
     };
 
-    // atomic write via temp + rename
     let tmp = project_dir.join("next_run_id.tmp");
     let mut f = fs::File::create(&tmp).await?;
     f.write_all((current + 1).to_string().as_bytes()).await?;
@@ -97,4 +96,104 @@ pub async fn list_projects(data_dir: &Path) -> anyhow::Result<Vec<String>> {
 
     out.sort();
     Ok(out)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunStatus {
+    pub status: String,            // "success" | "failed"
+    pub error: Option<String>,
+}
+
+pub async fn read_run_status(run_dir: &Path) -> Option<RunStatus> {
+    let p = run_dir.join("status.json");
+    let s = fs::read_to_string(&p).await.ok()?;
+    serde_json::from_str::<RunStatus>(&s).ok()
+}
+
+pub async fn list_run_ids(data_dir: &Path, project: &str) -> anyhow::Result<Vec<u64>> {
+    let runs_root = runs_dir(data_dir, project);
+    let mut out = Vec::new();
+
+    let mut rd = match fs::read_dir(&runs_root).await {
+        Ok(r) => r,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Ok(out);
+            }
+            return Err(e.into());
+        }
+    };
+
+    while let Some(ent) = rd.next_entry().await? {
+        let ft = ent.file_type().await?;
+        if ft.is_dir() {
+            if let Some(name) = ent.file_name().to_str() {
+                if let Ok(id) = name.parse::<u64>() {
+                    out.push(id);
+                }
+            }
+        }
+    }
+
+    out.sort_unstable();
+    Ok(out)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectSummary {
+    pub project: String,
+    pub runs_count: usize,
+    pub latest_run_id: Option<u64>,
+    pub latest_status: Option<String>, // "success" | "failed"
+    pub latest_error: Option<String>,
+}
+
+pub async fn project_summary(data_dir: &Path, project: &str) -> anyhow::Result<ProjectSummary> {
+    let pdir = project_dir(data_dir, project);
+    let latest = read_latest_run_id(&pdir).await;
+
+    let run_ids = list_run_ids(data_dir, project).await?;
+    let runs_count = run_ids.len();
+
+    let (latest_status, latest_error) = if let Some(id) = latest {
+        let rdir = run_dir(data_dir, project, id);
+        if let Some(st) = read_run_status(&rdir).await {
+            (Some(st.status), st.error)
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    Ok(ProjectSummary {
+        project: project.to_string(),
+        runs_count,
+        latest_run_id: latest,
+        latest_status,
+        latest_error,
+    })
+}
+
+pub async fn list_project_summaries(data_dir: &Path) -> anyhow::Result<Vec<ProjectSummary>> {
+    let projects = list_projects(data_dir).await?;
+    let mut out = Vec::with_capacity(projects.len());
+    for p in projects {
+        out.push(project_summary(data_dir, &p).await?);
+    }
+    out.sort_by(|a, b| a.project.cmp(&b.project));
+    Ok(out)
+}
+
+pub async fn delete_project(data_dir: &Path, project: &str) -> anyhow::Result<()> {
+    let pdir = project_dir(data_dir, project);
+    match fs::remove_dir_all(&pdir).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Ok(());
+            }
+            Err(e.into())
+        }
+    }
 }

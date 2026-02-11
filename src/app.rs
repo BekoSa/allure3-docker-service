@@ -5,6 +5,7 @@ use axum::{
 };
 use http::{header::HeaderName, Request};
 use std::time::Duration;
+use axum::routing::delete;
 use tower_http::{
     classify::ServerErrorsFailureClass,
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer, RequestId},
@@ -62,15 +63,31 @@ pub fn router(state: AppState) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
 
     Router::new()
-        // / -> /ui/
+        // Root -> /ui/
         .route("/", get(root_redirect))
+
+        // ======================
         // API
-        .route("/api/v1/projects", get(api::list_projects))
-        .route("/api/v1/projects/{project}/runs", post(api::upload_run))
+        // ======================
+        .route("/api/v1/projects/summary", get(api::list_projects_summary))
+        .route("/api/v1/projects/{project}", delete(api::delete_project))
+        .route(
+            "/api/v1/projects/{project}/runs",
+            get(api::list_runs).post(api::upload_run),
+        )
+        .route(
+            "/api/v1/projects/{project}/runs/{run_id}/regenerate",
+            post(api::regenerate_run),
+        )
+
+        // ======================
         // UI
+        // ======================
         .route("/ui/", get(ui::ui_index))
-        .route("/ui/{project}/", get(ui::ui_project_home))
+        .route("/ui/{project}/", get(ui::ui_project_page))
         .route("/ui/{project}/latest/", get(ui::ui_latest))
+
+        // Allure report static files
         .route("/ui/{project}/runs/{run_id}/", get(ui::ui_run_index))
         .route("/ui/{project}/runs/{run_id}/{*tail}", get(ui::ui_run_files))
         // request id: генерим и прокидываем обратно в response header

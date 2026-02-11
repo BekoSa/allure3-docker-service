@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Project: __PROJECT__</title>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --panel:rgba(255,255,255,.06);
+      --border:rgba(255,255,255,.12);
+      --text:rgba(255,255,255,.92);
+      --muted:rgba(255,255,255,.65);
+      --good:#2ecc71;
+      --bad:#ff5a5f;
+      --warn:#ffb020;
+      --btn:rgba(255,255,255,.10);
+      --btn2:rgba(255,255,255,.16);
+      --shadow:0 12px 30px rgba(0,0,0,.35);
+      --r:16px;
+    }
+
+    body{
+      margin:0;
+      font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;
+      background:#0b1220;
+      color:var(--text);
+      overflow-x:hidden;
+    }
+
+    .bg{position:fixed;inset:0;z-index:-2;overflow:hidden;background:#0b1220;}
+    .blob{
+      position:absolute;width:600px;height:600px;border-radius:999px;filter:blur(64px);opacity:.70;
+      animation:floaty 26s ease-in-out infinite;transform:translate3d(0,0,0);will-change:transform;
+    }
+    .b1{left:-170px;top:-160px;background:radial-gradient(circle at 30% 30%, rgba(88,101,242,.92), rgba(88,101,242,.12) 60%, transparent 72%);}
+    .b2{right:-220px;top:-140px;background:radial-gradient(circle at 35% 35%, rgba(46,204,113,.88), rgba(46,204,113,.12) 60%, transparent 72%);animation-duration:30s;animation-delay:-8s;}
+    .b3{left:26%;bottom:-300px;width:880px;height:880px;background:radial-gradient(circle at 40% 40%, rgba(255,90,95,.42), transparent 70%);animation-duration:34s;animation-delay:-14s;opacity:.52;}
+    @keyframes floaty{
+      0%{transform:translate(-2%,-1%) scale(1);}
+      25%{transform:translate(4%,3%) scale(1.05);}
+      50%{transform:translate(2%,7%) scale(.98);}
+      75%{transform:translate(-3%,2%) scale(1.03);}
+      100%{transform:translate(-2%,-1%) scale(1);}
+    }
+    .noise{
+      position:absolute;inset:0;opacity:.08;pointer-events:none;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");
+      background-repeat:repeat;mix-blend-mode:overlay;
+    }
+
+    .wrap{max-width:1100px;margin:0 auto;padding:24px 18px 44px;}
+    a{color:var(--text);text-decoration:none}
+    a:hover{text-decoration:underline}
+
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      padding:16px;
+      box-shadow:var(--shadow);
+      backdrop-filter:blur(12px) saturate(1.1);
+      -webkit-backdrop-filter:blur(12px) saturate(1.1);
+    }
+
+    .top{
+      display:grid;
+      grid-template-columns:1fr 220px;
+      gap:12px;
+      align-items:stretch;
+      margin-bottom:12px;
+    }
+
+    .title{font-size:18px;font-weight:750;margin:0 0 6px;}
+    .muted{color:var(--muted);font-size:13px;line-height:1.4;}
+
+    .btns{display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;}
+    button{
+      border:1px solid var(--border);
+      background:var(--btn);
+      color:var(--text);
+      padding:8px 10px;
+      border-radius:12px;
+      font-size:13px;
+      cursor:pointer;
+      line-height:1;
+    }
+    button:hover{background:var(--btn2);}
+    button.primary{border-color:rgba(88,101,242,.35);}
+    button.primary:hover{background:rgba(88,101,242,.18);}
+
+    .list{
+      margin-top:12px;
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:var(--r);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+      backdrop-filter:blur(12px);
+    }
+    .head{
+      display:grid;
+      grid-template-columns:120px 160px 1fr auto;
+      gap:10px;
+      padding:12px 14px;
+      border-bottom:1px solid var(--border);
+      background:rgba(0,0,0,.10);
+      color:var(--muted);
+      font-size:12px;
+    }
+    .scroll{max-height:620px;overflow:auto;}
+    .row{
+      display:grid;
+      grid-template-columns:120px 160px 1fr auto;
+      gap:10px;
+      align-items:center;
+      padding:12px 14px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .row:hover{background:rgba(255,255,255,.05);}
+
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:12px;
+      border:1px solid var(--border);
+      background:rgba(0,0,0,.16);
+      line-height:1;
+      width:fit-content;
+    }
+    .dot{width:8px;height:8px;border-radius:999px;background:var(--warn);flex:0 0 auto;}
+    .dot.good{background:var(--good);}
+    .dot.bad{background:var(--bad);}
+
+    .err{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    .toast{
+      position:fixed;
+      bottom:16px;
+      left:50%;
+      transform:translateX(-50%);
+      background:rgba(0,0,0,.55);
+      border:1px solid var(--border);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:12px;
+      display:none;
+      box-shadow:var(--shadow);
+      max-width:860px;
+      white-space:pre-wrap;
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      .blob{animation:none;}
+    }
+  </style>
+</head>
+
+<body>
+<div class="bg">
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+  <div class="noise"></div>
+</div>
+
+<div class="wrap">
+  <div class="top">
+    <div class="card">
+      <div class="title">Project: <span id="pname">__PROJECT__</span></div>
+      <div class="muted">
+        <a href="/ui/">← Back to projects</a> ·
+        <a href="/ui/__PROJECT__/latest/" target="_blank" rel="noopener noreferrer">Latest report</a>
+      </div>
+
+      <div class="btns">
+        <button class="primary" data-act="open_tab" data-url="/ui/__PROJECT__/latest/">Open latest</button>
+        <button data-act="refresh">Refresh</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="muted">Runs</div>
+      <div style="font-size:22px;margin-top:6px;" id="runsCount">—</div>
+    </div>
+  </div>
+
+  <div class="list">
+    <div class="head">
+      <div>Run</div>
+      <div>Status</div>
+      <div>Error</div>
+      <div style="text-align:right;">Actions</div>
+    </div>
+    <div class="scroll" id="runs"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const project = "__PROJECT__";
+  const elRuns = document.getElementById('runs');
+  const elCount = document.getElementById('runsCount');
+  const elToast = document.getElementById('toast');
+
+  function toast(msg){
+    elToast.textContent = msg;
+    elToast.style.display = 'block';
+    clearTimeout(window.__t);
+    window.__t = setTimeout(()=>elToast.style.display='none', 2800);
+  }
+
+  function esc(s){
+    return (s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function short(s, n){
+    if(!s) return "";
+    return s.length <= n ? s : (s.slice(0, n) + "…");
+  }
+
+  function badge(st){
+    if(!st) return `<span class="badge"><span class="dot"></span>unknown</span>`;
+    if(st === "success") return `<span class="badge"><span class="dot good"></span>success</span>`;
+    if(st === "failed") return `<span class="badge"><span class="dot bad"></span>failed</span>`;
+    return `<span class="badge"><span class="dot"></span>${esc(st)}</span>`;
+  }
+
+  function openNewTab(url){
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  function row(r){
+    const openUrl = r.ui_url;
+    const errText = r.error ? r.error : "";
+    const errShort = errText ? esc(short(errText, 160)) : "";
+
+    const regenBtn = (r.status === "failed")
+            ? `<button class="primary" data-act="regen" data-run="${r.run_id}">Regenerate</button>`
+            : ``;
+
+    return `
+        <div class="row">
+          <div>#${r.run_id}</div>
+          <div>${badge(r.status)}</div>
+          <div class="err" title="${esc(errText)}">${errShort}</div>
+          <div style="text-align:right;" class="btns">
+            <button data-act="open_tab" data-url="${openUrl}">Open</button>
+            ${regenBtn}
+          </div>
+        </div>
+      `;
+  }
+
+  async function load(){
+    const r = await fetch(`/api/v1/projects/${encodeURIComponent(project)}/runs`, { headers: { accept: "application/json" }});
+    if(!r.ok){
+      toast("Failed to load runs: " + r.status);
+      return;
+    }
+    const data = await r.json();
+    elCount.textContent = data.runs.length;
+    elRuns.innerHTML = data.runs.map(row).join("");
+  }
+
+  async function doRegenerate(runId){
+    const r = await fetch(`/api/v1/projects/${encodeURIComponent(project)}/runs/${runId}/regenerate`, { method: "POST" });
+    const txt = await r.text();
+    if(!r.ok){
+      toast(`Regenerate failed (${r.status}): ${short(txt, 220)}`);
+      await load();
+      return;
+    }
+    toast(`Regenerated #${runId}`);
+    await load();
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if(!btn) return;
+
+    const act = btn.getAttribute('data-act');
+    if(act === "open_tab"){
+      openNewTab(btn.getAttribute('data-url'));
+      return;
+    }
+    if(act === "refresh"){
+      load().catch(err => toast("Load error: " + err));
+      return;
+    }
+    if(act === "regen"){
+      doRegenerate(btn.getAttribute('data-run')).catch(err => toast("Regen error: " + err));
+    }
+  });
+
+  load().catch(err => toast("Load error: " + err));
+</script>
+</body>
+</html>

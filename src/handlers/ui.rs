@@ -9,43 +9,23 @@ use tower_http::services::ServeDir;
 
 use crate::{state::AppState, storage, util::sanitize_name};
 
-pub async fn ui_index(State(state): State<AppState>) -> impl IntoResponse {
-    let projects = match storage::list_projects(&state.data_dir).await {
-        Ok(p) => p,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("list projects: {e}")).into_response(),
-    };
+const PROJECTS_HTML: &str = include_str!("../ui_pages/projects.html");
+const PROJECT_HTML: &str = include_str!("../ui_pages/project.html");
 
-    let mut items = String::new();
-    for p in projects.into_iter().filter_map(|x| sanitize_name(&x)) {
-        items.push_str(&format!(r#"<li><a href="/ui/{}/">{}</a></li>"#, p, p));
-    }
-
-    let html = format!(
-        r#"<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Allure Projects</title>
-</head>
-<body>
-  <h1>Projects</h1>
-  <ul>{}</ul>
-</body>
-</html>"#,
-        items
-    );
-
-    Html(html).into_response()
+pub async fn ui_index(State(_state): State<AppState>) -> impl IntoResponse {
+    Html(PROJECTS_HTML).into_response()
 }
 
-pub async fn ui_project_home(Path(project_raw): Path<String>) -> impl IntoResponse {
+/// /ui/{project}/ — страница проекта (список прогонов)
+pub async fn ui_project_page(Path(project_raw): Path<String>) -> impl IntoResponse {
     let project = match sanitize_name(&project_raw) {
         Some(p) => p,
         None => return (StatusCode::BAD_REQUEST, "Invalid project").into_response(),
     };
 
-    Redirect::temporary(&format!("/ui/{}/latest/", project)).into_response()
+    // Подстановка __PROJECT__ в HTML (простая и быстрая)
+    let html = PROJECT_HTML.replace("__PROJECT__", &project);
+    Html(html).into_response()
 }
 
 pub async fn ui_latest(
@@ -67,7 +47,7 @@ pub async fn ui_latest(
 }
 
 /// /ui/{project}/runs/{run_id}/
-/// Отдаём index.html (через ServeDir + append_index_html)
+/// Отдаём index.html (через ServeDir)
 pub async fn ui_run_index(
     State(state): State<AppState>,
     Path((project_raw, run_id)): Path<(String, u64)>,
@@ -96,10 +76,6 @@ async fn serve_report_path(
 
     let report_dir = storage::run_dir(&state.data_dir, &project, run_id).join("report");
 
-    // ВАЖНО: ServeDir должен видеть путь, относительный к report_dir.
-    // Поэтому формируем "виртуальный" URI:
-    // - "" -> "/" (index)
-    // - "foo/bar.js" -> "/foo/bar.js"
     let rel_path = if tail.is_empty() { "/".to_string() } else { format!("/{}", tail) };
 
     let uri: Uri = match rel_path.parse() {
@@ -107,7 +83,7 @@ async fn serve_report_path(
         Err(_) => return (StatusCode::BAD_REQUEST, "Bad path").into_response(),
     };
 
-    // Создаём новый request только для ServeDir
+    // Создаём новый request для ServeDir, чтобы путь был относительным к report_dir
     let req = Request::builder()
         .method("GET")
         .uri(uri)
