@@ -15,7 +15,7 @@ services:
       LISTEN: 0.0.0.0:8080
       ALLURE_BIN: allure
       RUST_BACKTRACE: "1"
-      RUST_LOG: info
+      RUST_LOG: debug
 
     volumes:
       - ./data:/data

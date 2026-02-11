@@ -5,7 +5,7 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{error, info, warn};
 
 use crate::{
     allure,
@@ -110,7 +110,10 @@ pub async fn upload_run(
     };
 
     let run_dir = storage::run_dir(&state.data_dir, &project, run_id);
-    let results_dir = run_dir.join("results");
+
+    // ✅ важно: Allure 3 CLI по умолчанию ищет директории "allure-results"
+    // поэтому храним результаты именно под этим именем
+    let results_dir = run_dir.join("allure-results");
     let report_dir = run_dir.join("report");
 
     if let Err(e) = tokio::fs::create_dir_all(&results_dir).await {
@@ -153,6 +156,13 @@ pub async fn upload_run(
     // unzip
     let limits = UnzipLimits::default();
     if let Err(e) = unzip::unzip_safely(zip_bytes, results_dir.clone(), limits).await {
+        warn!(
+            project = %project,
+            run_id = run_id,
+            error = %e,
+            "failed to unzip results"
+        );
+
         let _ = storage::write_json(
             &run_dir.join("status.json"),
             &RunStatus {
@@ -178,7 +188,7 @@ pub async fn upload_run(
                 .await;
 
             if let Err(e) = storage::set_latest_run_id(&project_dir, run_id).await {
-                tracing::warn!("set latest_run_id failed: {}", e);
+                warn!(project = %project, run_id = run_id, error = %e, "set latest_run_id failed");
             }
 
             info!("uploaded run: project={} run_id={}", project, run_id);
@@ -196,6 +206,14 @@ pub async fn upload_run(
         }
         Err(e) => {
             let err_text = e.to_string();
+
+            error!(
+                project = %project,
+                run_id = run_id,
+                error = %err_text,
+                "report generation failed"
+            );
+
             let _ = storage::write_json(
                 &run_dir.join("status.json"),
                 &RunStatus {

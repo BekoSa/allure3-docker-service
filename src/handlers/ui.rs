@@ -1,7 +1,7 @@
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{Request, StatusCode},
+    http::{Request, StatusCode, Uri},
     response::{Html, IntoResponse, Redirect},
 };
 use tower::ServiceExt;
@@ -44,6 +44,7 @@ pub async fn ui_project_home(Path(project_raw): Path<String>) -> impl IntoRespon
         Some(p) => p,
         None => return (StatusCode::BAD_REQUEST, "Invalid project").into_response(),
     };
+
     Redirect::temporary(&format!("/ui/{}/latest/", project)).into_response()
 }
 
@@ -65,30 +66,28 @@ pub async fn ui_latest(
     Redirect::temporary(&format!("/ui/{}/runs/{}/", project, run_id)).into_response()
 }
 
-/// Явный индекс для /runs/{run_id}/
-/// Просто отдаём index.html из report dir через ServeDir (он сам найдёт index.html)
+/// /ui/{project}/runs/{run_id}/
+/// Отдаём index.html (через ServeDir + append_index_html)
 pub async fn ui_run_index(
     State(state): State<AppState>,
     Path((project_raw, run_id)): Path<(String, u64)>,
-    req: Request<Body>,
 ) -> impl IntoResponse {
-    serve_report_dir(state, project_raw, run_id, req).await
+    serve_report_path(state, project_raw, run_id, "").await
 }
 
-/// Статика для /runs/{run_id}/{*tail}
+/// /ui/{project}/runs/{run_id}/{*tail}
 pub async fn ui_run_files(
     State(state): State<AppState>,
-    Path((project_raw, run_id, _tail)): Path<(String, u64, String)>,
-    req: Request<Body>,
+    Path((project_raw, run_id, tail)): Path<(String, u64, String)>,
 ) -> impl IntoResponse {
-    serve_report_dir(state, project_raw, run_id, req).await
+    serve_report_path(state, project_raw, run_id, &tail).await
 }
 
-async fn serve_report_dir(
+async fn serve_report_path(
     state: AppState,
     project_raw: String,
     run_id: u64,
-    req: Request<Body>,
+    tail: &str,
 ) -> impl IntoResponse {
     let project = match sanitize_name(&project_raw) {
         Some(p) => p,
@@ -96,6 +95,25 @@ async fn serve_report_dir(
     };
 
     let report_dir = storage::run_dir(&state.data_dir, &project, run_id).join("report");
+
+    // ВАЖНО: ServeDir должен видеть путь, относительный к report_dir.
+    // Поэтому формируем "виртуальный" URI:
+    // - "" -> "/" (index)
+    // - "foo/bar.js" -> "/foo/bar.js"
+    let rel_path = if tail.is_empty() { "/".to_string() } else { format!("/{}", tail) };
+
+    let uri: Uri = match rel_path.parse() {
+        Ok(u) => u,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Bad path").into_response(),
+    };
+
+    // Создаём новый request только для ServeDir
+    let req = Request::builder()
+        .method("GET")
+        .uri(uri)
+        .body(Body::empty())
+        .unwrap();
+
     let service = ServeDir::new(report_dir).append_index_html_on_directories(true);
 
     match service.oneshot(req).await {
