@@ -1,0 +1,128 @@
+name: Build & Push Docker image
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute next version (master only)
+        if: github.event_name == 'push'
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          # Берём последний тег вида vX.Y.Z
+          last="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"
+          if [[ -z "${last}" ]]; then
+            next="v0.1.0"
+          else
+            # bump patch: vX.Y.Z -> vX.Y.(Z+1)
+            ver="${last#v}"
+            IFS='.' read -r major minor patch <<< "${ver}"
+            patch=$((patch+1))
+            next="v${major}.${minor}.${patch}"
+          fi
+
+          echo "last=${last}" >> "$GITHUB_OUTPUT"
+          echo "next=${next}" >> "$GITHUB_OUTPUT"
+          echo "Computed version: ${next}"
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+            type=sha,format=short,enable=true
+
+            # для master push: semver тег и latest
+            type=raw,value=${{ steps.ver.outputs.next }},enable=${{ github.event_name == 'push' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
+
+      - name: Build (PR) - no push
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push (master)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ---------- пушим git tag с версией в репозиторий ----------
+      - name: Create & push git tag (master only)
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.ver.outputs.next }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Если вдруг тег уже существует — не падаем
+          if git rev-parse "$ver" >/dev/null 2>&1; then
+            echo "Tag $ver already exists, skipping."
+            exit 0
+          fi
+
+          git tag -a "$ver" -m "Release $ver"
+          git push origin "$ver"
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "Version tag: ${{ steps.ver.outputs.next }}"
+            echo "Also pushed: latest"
+          else
+            echo "PR build: not pushed"
+          fi
