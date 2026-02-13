@@ -6,13 +6,8 @@
 FROM rust:1.91-bookworm AS builder
 WORKDIR /app
 
-# Improve build caching
+## Build
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release
-
-# Real sources
-RUN rm -rf src
 COPY src ./src
 RUN cargo build --release
 
