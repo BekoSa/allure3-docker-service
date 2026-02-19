@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
 use crate::{
-    allure,
+    allure::{self, AllureConfigChoice},
     state::AppState,
     storage,
     unzip::{self, UnzipLimits},
@@ -50,7 +50,7 @@ pub struct DeleteResp {
 pub struct RegenerateResp {
     pub project: String,
     pub run_id: u64,
-    pub status: String,        // "success" | "failed"
+    pub status: String, // "success" | "failed"
     pub error: Option<String>,
 }
 
@@ -106,7 +106,9 @@ pub async fn list_runs(
     // list ids
     let mut ids = match storage::list_run_ids(&state.data_dir, &project).await {
         Ok(v) => v,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("list runs: {e}")).into_response(),
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("list runs: {e}")).into_response()
+        }
     };
 
     // newest first
@@ -144,7 +146,14 @@ pub async fn delete_project(
         return (StatusCode::INTERNAL_SERVER_ERROR, format!("delete project: {e}")).into_response();
     }
 
-    (StatusCode::OK, Json(DeleteResp { deleted: true, project })).into_response()
+    (
+        StatusCode::OK,
+        Json(DeleteResp {
+            deleted: true,
+            project,
+        }),
+    )
+        .into_response()
 }
 
 pub async fn regenerate_run(
@@ -165,11 +174,25 @@ pub async fn regenerate_run(
 
     let _ = tokio::fs::remove_dir_all(&report_dir).await;
 
-    match allure::generate_report(&state.allure_bin, &results_dir, &report_dir).await {
+    let cfg = match storage::find_run_config_mjs(&run_dir).await {
+        Some(p) => {
+            info!(project=%project, run_id=run_id, config=%p.display(), "regenerate: using run config");
+            AllureConfigChoice::Path(p)
+        }
+        None => {
+            info!(project=%project, run_id=run_id, "regenerate: no config found, generating without config");
+            AllureConfigChoice::None
+        }
+    };
+
+    match allure::generate_report(&state, &results_dir, &report_dir, &run_dir, cfg).await {
         Ok(()) => {
             let _ = storage::write_json(
                 &run_dir.join("status.json"),
-                &storage::RunStatus { status: "success".into(), error: None },
+                &storage::RunStatus {
+                    status: "success".into(),
+                    error: None,
+                },
             )
                 .await;
 
@@ -179,12 +202,16 @@ pub async fn regenerate_run(
                 let _ = storage::set_latest_run_id(&pdir, run_id).await;
             }
 
-            (StatusCode::OK, Json(RegenerateResp {
-                project,
-                run_id,
-                status: "success".into(),
-                error: None,
-            })).into_response()
+            (
+                StatusCode::OK,
+                Json(RegenerateResp {
+                    project,
+                    run_id,
+                    status: "success".into(),
+                    error: None,
+                }),
+            )
+                .into_response()
         }
         Err(e) => {
             let err_text = e.to_string();
@@ -192,16 +219,23 @@ pub async fn regenerate_run(
 
             let _ = storage::write_json(
                 &run_dir.join("status.json"),
-                &storage::RunStatus { status: "failed".into(), error: Some(err_text.clone()) },
+                &storage::RunStatus {
+                    status: "failed".into(),
+                    error: Some(err_text.clone()),
+                },
             )
                 .await;
 
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(RegenerateResp {
-                project,
-                run_id,
-                status: "failed".into(),
-                error: Some(err_text),
-            })).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(RegenerateResp {
+                    project,
+                    run_id,
+                    status: "failed".into(),
+                    error: Some(err_text),
+                }),
+            )
+                .into_response()
         }
     }
 }
@@ -253,20 +287,50 @@ pub async fn upload_run(
 
     let mut zip_bytes: Option<Vec<u8>> = None;
     let mut meta: Meta = Meta::default();
+    let mut config_js: Option<String> = None;
 
     while let Ok(Some(field)) = mp.next_field().await {
         let name = field.name().unwrap_or("").to_string();
+
         if name == "results" {
             match field.bytes().await {
                 Ok(b) => zip_bytes = Some(b.to_vec()),
-                Err(e) => return (StatusCode::BAD_REQUEST, format!("read results: {e}")).into_response(),
-            }
-        } else if name == "meta" {
-            if let Ok(t) = field.text().await {
-                if let Ok(m) = serde_json::from_str::<Meta>(&t) {
-                    meta = m;
+                Err(e) => {
+                    return (StatusCode::BAD_REQUEST, format!("read results: {e}")).into_response()
                 }
             }
+            continue;
+        }
+
+        if name == "meta" {
+            match field.bytes().await {
+                Ok(b) => {
+                    let t = String::from_utf8_lossy(&b).trim().to_string();
+                    if !t.is_empty() {
+                        if let Ok(m) = serde_json::from_str::<Meta>(&t) {
+                            meta = m;
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+            continue;
+        }
+
+        if name == "config" {
+            // config может прийти как text или файл — bytes покрывает оба случая
+            match field.bytes().await {
+                Ok(b) => {
+                    let t = String::from_utf8_lossy(&b).trim().to_string();
+                    if !t.is_empty() {
+                        config_js = Some(t);
+                    }
+                }
+                Err(e) => {
+                    return (StatusCode::BAD_REQUEST, format!("read config: {e}")).into_response()
+                }
+            }
+            continue;
         }
     }
 
@@ -285,18 +349,29 @@ pub async fn upload_run(
 
         let _ = storage::write_json(
             &run_dir.join("status.json"),
-            &storage::RunStatus { status: "failed".into(), error: Some(format!("bad zip: {e}")) },
+            &storage::RunStatus {
+                status: "failed".into(),
+                error: Some(format!("bad zip: {e}")),
+            },
         )
             .await;
 
         return (StatusCode::BAD_REQUEST, format!("bad zip: {e}")).into_response();
     }
 
-    match allure::generate_report(&state.allure_bin, &results_dir, &report_dir).await {
+    let cfg = match config_js {
+        None => AllureConfigChoice::None,
+        Some(js) => AllureConfigChoice::InlineJs(js),
+    };
+
+    match allure::generate_report(&state, &results_dir, &report_dir, &run_dir, cfg).await {
         Ok(()) => {
             let _ = storage::write_json(
                 &run_dir.join("status.json"),
-                &storage::RunStatus { status: "success".into(), error: None },
+                &storage::RunStatus {
+                    status: "success".into(),
+                    error: None,
+                },
             )
                 .await;
 
@@ -323,7 +398,10 @@ pub async fn upload_run(
 
             let _ = storage::write_json(
                 &run_dir.join("status.json"),
-                &storage::RunStatus { status: "failed".into(), error: Some(err_text.clone()) },
+                &storage::RunStatus {
+                    status: "failed".into(),
+                    error: Some(err_text.clone()),
+                },
             )
                 .await;
 
