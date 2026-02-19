@@ -34,8 +34,8 @@ pub async fn reserve_next_run_id(project_dir: &Path) -> anyhow::Result<u64> {
     f.write_all((current + 1).to_string().as_bytes()).await?;
     f.flush().await?;
     drop(f);
-    fs::rename(&tmp, &p).await?;
 
+    fs::rename(&tmp, &p).await?;
     Ok(current)
 }
 
@@ -71,6 +71,18 @@ pub async fn write_json<T: Serialize>(path: &Path, v: &T) -> anyhow::Result<()> 
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunStatus {
+    pub status: String, // "success" | "failed"
+    pub error: Option<String>,
+}
+
+pub async fn read_run_status(run_dir: &Path) -> Option<RunStatus> {
+    let p = run_dir.join("status.json");
+    let s = fs::read_to_string(&p).await.ok()?;
+    serde_json::from_str::<RunStatus>(&s).ok()
+}
+
 pub async fn list_projects(data_dir: &Path) -> anyhow::Result<Vec<String>> {
     let root = data_dir.join("projects");
     let mut out = Vec::new();
@@ -96,18 +108,6 @@ pub async fn list_projects(data_dir: &Path) -> anyhow::Result<Vec<String>> {
 
     out.sort();
     Ok(out)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunStatus {
-    pub status: String,            // "success" | "failed"
-    pub error: Option<String>,
-}
-
-pub async fn read_run_status(run_dir: &Path) -> Option<RunStatus> {
-    let p = run_dir.join("status.json");
-    let s = fs::read_to_string(&p).await.ok()?;
-    serde_json::from_str::<RunStatus>(&s).ok()
 }
 
 pub async fn list_run_ids(data_dir: &Path, project: &str) -> anyhow::Result<Vec<u64>> {
@@ -144,7 +144,7 @@ pub struct ProjectSummary {
     pub project: String,
     pub runs_count: usize,
     pub latest_run_id: Option<u64>,
-    pub latest_status: Option<String>, // "success" | "failed"
+    pub latest_status: Option<String>,
     pub latest_error: Option<String>,
 }
 
@@ -183,6 +183,32 @@ pub async fn list_project_summaries(data_dir: &Path) -> anyhow::Result<Vec<Proje
     }
     out.sort_by(|a, b| a.project.cmp(&b.project));
     Ok(out)
+}
+
+/// Find an Allure 3 config file for a run.
+/// Priority:
+/// 1) run_dir/allure.config.mjs
+/// 2) any *.mjs file directly under run_dir (non-recursive)
+pub async fn find_run_config_mjs(run_dir: &Path) -> Option<PathBuf> {
+    let preferred = run_dir.join("allure.config.mjs");
+    if fs::metadata(&preferred).await.is_ok() {
+        return Some(preferred);
+    }
+
+    let mut rd = fs::read_dir(run_dir).await.ok()?;
+    while let Ok(Some(ent)) = rd.next_entry().await {
+        let path = ent.path();
+        let ft = ent.file_type().await.ok()?;
+        if ft.is_file() {
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if ext.eq_ignore_ascii_case("mjs") {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 pub async fn delete_project(data_dir: &Path, project: &str) -> anyhow::Result<()> {
