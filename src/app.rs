@@ -1,6 +1,7 @@
 use axum::{
     response::{IntoResponse, Redirect},
     routing::{get, post},
+    extract::DefaultBodyLimit,
     Router,
 };
 use http::{header::HeaderName, Request};
@@ -90,6 +91,8 @@ pub fn router(state: AppState) -> Router {
         // Allure report static files
         .route("/ui/{project}/runs/{run_id}/", get(ui::ui_run_index))
         .route("/ui/{project}/runs/{run_id}/{*tail}", get(ui::ui_run_files))
+        // BodyLimit
+        .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
         // request id: генерим и прокидываем обратно в response header
         .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
         .layer(SetRequestIdLayer::new(request_id_header.clone(), MakeRequestUuid))
