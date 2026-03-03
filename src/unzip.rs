@@ -15,8 +15,8 @@ pub struct UnzipLimits {
 impl Default for UnzipLimits {
     fn default() -> Self {
         Self {
-            max_files: 10_000,
-            max_total_uncompressed: 2 * 1024 * 1024 * 1024, // 2 GiB
+            max_files: 1_000_000,
+            max_total_uncompressed: 4 * 1024 * 1024 * 1024, // 2 GiB
             max_single_file: 512 * 1024 * 1024,             // 512 MiB
         }
     }
